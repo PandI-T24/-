@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>ハートピア用ドット変換ツール</title>
+<style>
+body {
+  font-family: sans-serif;
+  display: flex;
+  gap: 20px;
+  padding: 20px;
+  box-sizing: border-box;
+}
+
+canvas {
+  image-rendering: pixelated;
+  border: 1px solid #999;
+}
+
+.controls {
+  margin-bottom: 10px;
+}
+
+.right {
+  width: 340px;
+}
+
+.palette {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.palette-group {
+  display: grid;
+  grid-template-columns: repeat(2, 20px);
+  gap: 2px;
+  border: 1px solid #aaa;
+  padding: 4px;
+}
+
+.color-cell {
+  width: 20px;
+  height: 20px;
+}
+
+.highlight {
+  outline: 3px solid red;
+}
+
+.info {
+  margin-bottom: 10px;
+  white-space: pre-line;
+}
+
+#canvasWrap {
+  position: relative;
+  display: inline-block;
+  --cell: 12px;
+  --grid-black: rgba(0,0,0,0.3);
+  --grid-white: rgba(255,255,255,0.4);
+  --grid-color: var(--grid-black); /* 初期は黒 */
+}
+
+#canvasWrap::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+
+  background-image:
+  linear-gradient(to right, var(--grid-color) 1px, transparent 1px),
+  linear-gradient(to bottom, var(--grid-color) 1px, transparent 1px);
+  
+  background-size: var(--cell) var(--cell);
+}
+
+#tooltip {
+  position: absolute;
+  padding: 6px 10px;
+  background: #fff;
+  color: #333;
+  font-size: 12px;
+  border-radius: 6px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.25);
+  pointer-events: none;
+  white-space: nowrap;
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 0.15s, transform 0.15s;
+}
+
+#tooltip.show {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+</style>
+</head>
+<body>
+
+<div>
+  <div class="controls">
+    比率：
+    <select id="ratio">
+      <option value="1:1">1:1</option>
+      <option value="16:9">16:9</option>
+      <option value="4:3">4:3</option>
+      <option value="3:4">3:4</option>
+      <option value="9:16">9:16</option>
+    </select>
+
+    精度：
+    <select id="resolution">
+      <option value="30">30</option>
+      <option value="50" selected>50</option>
+      <option value="100">100</option>
+      <option value="150">150</option>
+    </select>
+
+    <br><br>
+    <input type="file" id="imageInput">
+
+    <br><br>
+    ズーム：
+    <input type="range" id="zoom" min="4" max="25" value="12">
+    
+  </div>
+
+<br><br>
+グリッド：
+<button id="gridToggle">ON</button>
+<button id="gridColorToggle">黒</button>
+
+<div id="canvasWrap">
+  <canvas id="canvas"></canvas>
+  <div id="tooltip"></div>
+</div>
+
+<div class="right">
+  <div class="info" id="info">ドットをタップしてください</div>
+  <div class="palette" id="palette"></div>
+</div>
+
+
+<script>
+// =====================
+// パレット定義（省略なし）
+// =====================
+const palettes = [
+{ name:"黒系（3色×2）", columns:[
+    ["#061616","#808182","#fefffe"],
+    ["#434446","#bec0bf","#fefbf4"]
+  ]},
+  { name:"赤系", columns:[
+    ["#d2374f","#a7273e","#cb8384","#69313b","#c0acab"],
+    ["#ef6e72","#f5aca6","#a25e5f","#e7d6d6","#745f5e"]
+  ]},
+  { name:"オレンジ系", columns:[
+    ["#e95e2c","#aa4225","#da947d","#753b32","#bfaca6"],
+    ["#fa8359","#feba9f","#ae6b58","#e9d6d0","#755d59"]
+  ]},
+  { name:"山吹系", columns:[
+    ["#f39d12","#b16d18","#dba76d","#7a5026","#cebca8"],
+    ["#feae3b","#ffcf91","#b3814c","#f5e3cf","#806f5f"]
+  ]},
+  { name:"黄色系", columns:[
+    ["#eeca15","#b39417","#d3be6d","#756227","#c6bfa3"],
+    ["#f9d737","#fce891","#ab964a","#efe6c6","#78725a"]
+  ]},
+  { name:"黄緑系", columns:[
+    ["#a7bc15","#758616","#adb76e","#555f2b","#bbc0a2"],
+    ["#b6c930","#d8de92","#848f48","#e5eac6","#6f745e"]
+  ]},
+  { name:"緑系", columns:[
+    ["#06a15d","#047245","#78b28c","#235740","#9eb6a6"],
+    ["#41b97c","#9cd9ad","#508969","#c4dfcc","#53695d"]
+  ]},
+  { name:"エメラルド系", columns:[
+    ["#058681","#056865","#57a49e","#054b4b","#98b7b2"],
+    ["#05ab9f","#7cccbf","#2c7d77","#bfdfda","#4d6a66"]
+  ]},
+  { name:"水色系", columns:[
+    ["#06719d","#055877","#5192a4","#064959","#9db4ba"],
+    ["#059aba","#78baca","#246d7e","#c6dde2","#50676f"]
+  ]},
+  { name:"青系", columns:[
+    ["#065ea6","#054781","#5d80a0","#193b57","#9ca6b0"],
+    ["#2d83c0","#84a8c8","#385c80","#c0cdd6","#4b5a67"]
+  ]},
+  { name:"青紫系", columns:[
+    ["#524da1","#3e397d","#787aa1","#313453","#a0a2af"],
+    ["#7578bd","#a2a0c8","#55577e","#c9cbd7","#575969"]
+  ]},
+  { name:"赤紫系", columns:[
+    ["#813c8c","#622a6c","#907296","#432f4b","#aba1ac"],
+    ["#9f67ab","#b89bb9","#6b4d73","#d0c8d3","#615664"]
+  ]},
+  { name:"桃系", columns:[
+    ["#ac356d","#872757","#b37a8b","#60344b","#bdadb0"],
+    ["#d06a8f","#daa1b4","#8c5268","#e2d6da","#725e67"]
+  ]}
+]
+
+// =====================
+// 共通要素
+// =====================
+const canvas = document.getElementById("canvas")
+const ctx = canvas.getContext("2d")
+const info = document.getElementById("info")
+const zoom = document.getElementById("zoom")
+
+let grid = []
+let paletteCells = []
+
+
+// =====================
+// 比率＋精度計算
+// =====================
+function getCanvasSize() {
+  const [rw, rh] = document.getElementById("ratio").value.split(":").map(Number)
+  const base = Number(document.getElementById("resolution").value)
+  const w = Math.round(base * rw / Math.max(rw, rh))
+  const h = Math.round(base * rh / Math.max(rw, rh))
+  return { w, h }
+}
+
+// =====================
+// 色距離（最近傍色）
+// =====================
+function colorDist(c1, c2) {
+  const a = parseInt(c1.slice(1), 16)
+  const b = parseInt(c2.slice(1), 16)
+  const r = ((a>>16)&255) - ((b>>16)&255)
+  const g = ((a>>8)&255) - ((b>>8)&255)
+  const bl = (a&255) - (b&255)
+  return r*r + g*g + bl*bl
+}
+
+function findNearestPalette(hex) {
+  let best
+  palettes.forEach((p, pi) =>
+    p.columns.forEach((col, ci) =>
+      col.forEach((c, ri) => {
+        const d = colorDist(hex, c)
+        if (!best || d < best.d) best = {pi,ci,ri,color:c,d}
+      })
+    )
+  )
+  return best
+}
+
+// =====================
+// パレットUI生成
+// =====================
+function buildPaletteUI() {
+  const pDiv = document.getElementById("palette")
+  pDiv.innerHTML = ""
+  paletteCells = []
+
+palettes.forEach((p, pi) => {
+  const g = document.createElement("div")
+  g.className = "palette-group"
+
+  const rows = p.columns[0].length
+
+  for (let ri = 0; ri < rows; ri++) {
+    p.columns.forEach((col, ci) => {
+      const c = col[ri]
+
+      const cell = document.createElement("div")
+      cell.className = "color-cell"
+      cell.style.background = c
+      cell.dataset.pi = pi
+      cell.dataset.ci = ci
+      cell.dataset.ri = ri
+      g.appendChild(cell)
+      paletteCells.push(cell)
+    })
+  }
+
+  pDiv.appendChild(g)
+})
+}
+buildPaletteUI()
+
+// =====================
+// 画像 → ドット化
+// =====================
+document.getElementById("imageInput").onchange = e => {
+  const img = new Image()
+  img.onload = () => {
+    const { w, h } = getCanvasSize()
+    canvas.width = w
+    canvas.height = h
+
+    canvas.style.width = w * zoom.value + "px"
+    canvas.style.height = h * zoom.value + "px"
+    
+    wrap.style.width = canvas.style.width
+    wrap.style.height = canvas.style.height
+
+    const temp = document.createElement("canvas")
+    temp.width = w
+    temp.height = h
+    const tctx = temp.getContext("2d")
+    tctx.drawImage(img, 0, 0, w, h)
+
+    const data = tctx.getImageData(0,0,w,h).data
+    grid = []
+
+    for (let y=0; y<h; y++) {
+      grid[y] = []
+      for (let x=0; x<w; x++) {
+        const i = (y*w+x)*4
+        const hex = `#${[data[i],data[i+1],data[i+2]]
+          .map(v=>v.toString(16).padStart(2,"0")).join("")}`
+        const p = findNearestPalette(hex)
+        grid[y][x] = p
+        ctx.fillStyle = p.color
+        ctx.fillRect(x,y,1,1)
+      }
+    }
+  }
+  img.src = URL.createObjectURL(e.target.files[0])
+}
+
+// =====================
+// ズーム
+// =====================
+zoom.oninput = () => {
+  const size = zoom.value + "px"
+
+  canvas.style.width = canvas.width * zoom.value + "px"
+  canvas.style.height = canvas.height * zoom.value + "px"
+
+  wrap.style.width = canvas.style.width
+  wrap.style.height = canvas.style.height
+
+  wrap.style.setProperty("--cell", size)
+}
+
+// =====================
+// タップ表示
+// =====================
+canvas.onclick = e => {
+if (!grid.length) return
+  const r = canvas.getBoundingClientRect()
+  const x = Math.floor((e.clientX-r.left)/(r.width/canvas.width))
+  const y = Math.floor((e.clientY-r.top)/(r.height/canvas.height))
+  if (!grid[y] || !grid[y][x]) return  // ← ここでチェック！
+  const c = grid[y][x]
+
+  info.innerText =
+`このマスの色：
+左から ${c.pi+1} 番パレット
+${c.ci+1} 列目 の 上から ${c.ri+1} 番`
+
+  paletteCells.forEach(p=>p.classList.remove("highlight"))
+  paletteCells.find(p =>
+    p.dataset.pi==c.pi &&
+    p.dataset.ci==c.ci &&
+    p.dataset.ri==c.ri
+  )?.classList.add("highlight")
+
+  // --- ここから tooltip ---
+  tooltip.innerText =
+`P${c.pi+1} / 列${c.ci+1} / 行${c.ri+1}`
+
+  tooltip.style.left = e.clientX - r.left + 12 + "px"
+  tooltip.style.top  = e.clientY - r.top  + 12 + "px"
+  tooltip.classList.add("show")
+
+  clearTimeout(tooltip._timer)
+  tooltip._timer = setTimeout(() => {
+    tooltip.classList.remove("show")
+  }, 1500)
+}
+
+const wrap = document.getElementById("canvasWrap")
+
+const gridBtn = document.getElementById("gridColorToggle")
+let isWhiteGrid = false
+
+gridBtn.onclick = () => {
+  isWhiteGrid = !isWhiteGrid
+  wrap.style.setProperty(
+    "--grid-color",
+    isWhiteGrid
+      ? "rgba(255,255,255,0.4)"
+      : "rgba(0,0,0,0.3)"
+  )
+  gridBtn.textContent = isWhiteGrid ? "白" : "黒"
+}
+
+const tooltip = document.getElementById("tooltip")
+
+const gridToggle = document.getElementById("gridToggle")
+let gridOn = true
+
+gridToggle.onclick = () => {
+  gridOn = !gridOn
+  wrap.style.opacity = gridOn ? "1" : "1"   // wrap自体は消さない
+  wrap.style.setProperty(
+    "--grid-color",
+    gridOn
+      ? (isWhiteGrid ? "rgba(255,255,255,0.4)" : "rgba(0,0,0,0.3)")
+      : "rgba(0,0,0,0)"
+  )
+  gridToggle.textContent = gridOn ? "ON" : "OFF"
+}
+</script>
+</body>
+</html>
