@@ -60,19 +60,54 @@ canvas {
   --grid-black: rgba(0,0,0,0.3);
   --grid-white: rgba(255,255,255,0.4);
   --grid-color: var(--grid-black); /* 初期は黒 */
+  
+  --major-x-offset: 0px;
+  --major-y-offset: 0px;
+  --major-width: 2px; /* ← 太線の太さ */
 }
 
-#canvasWrap::before {
-  content: "";
+.grid.thin {
   position: absolute;
   inset: 0;
   pointer-events: none;
 
   background-image:
-  linear-gradient(to right, var(--grid-color) 1px, transparent 1px),
-  linear-gradient(to bottom, var(--grid-color) 1px, transparent 1px);
-  
+    linear-gradient(to right, var(--grid-color) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--grid-color) 1px, transparent 1px);
+
   background-size: var(--cell) var(--cell);
+}
+
+.grid.major {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+
+  background-image:
+    linear-gradient(
+      to right,
+      transparent 0,
+      transparent calc(var(--cell) * 5 - var(--major-width) / 2),
+      var(--grid-color) calc(var(--cell) * 5 - var(--major-width) / 2),
+      var(--grid-color) calc(var(--cell) * 5 + var(--major-width) / 2),
+      transparent calc(var(--cell) * 5 + var(--major-width) / 2)
+    ),
+    linear-gradient(
+      to bottom,
+      transparent 0,
+      transparent calc(var(--cell) * 5 - var(--major-width) / 2),
+      var(--grid-color) calc(var(--cell) * 5 - var(--major-width) / 2),
+      var(--grid-color) calc(var(--cell) * 5 + var(--major-width) / 2),
+      transparent calc(var(--cell) * 5 + var(--major-width) / 2)
+    );
+
+  background-size:
+    calc(var(--cell) * 5) calc(100% + 1px),
+    calc(100% + 1px) calc(var(--cell) * 5);
+    
+  background-position: 0 bottom;
+   outline: var(--major-width) solid var(--grid-color);
+  outline-offset: calc(var(--major-width) * -1);
 }
 
 #tooltip {
@@ -141,9 +176,16 @@ canvas {
 
 <div id="canvasWrap">
   <canvas id="canvas"></canvas>
+  <div class="grid thin"></div>
+  <div class="grid major"></div>
   <div id="selectBox"></div>
   <div id="tooltip"></div>
 </div>
+
+<br><br>
+編集モード：
+<button id="editToggle">OFF</button>
+<button id="maskColorToggle">白</button>
 
 <div class="right">
   <div class="info" id="info">ドットをタップしてください</div>
@@ -151,6 +193,39 @@ canvas {
 </div>
 
 <script>
+const gridSizeTable = {
+  "16:9": {
+    30: { w: 30, h: 18 },
+    50: { w: 50, h: 28 },
+    100:{ w:100, h: 56 },
+    150:{ w:150, h: 84 }
+  },
+  "4:3": {
+    30: { w: 30, h: 24 },
+    50: { w: 50, h: 38 },
+    100:{ w:100, h: 76 },
+    150:{ w:150, h:114 }
+  },
+  "1:1": {
+    30: { w: 30, h: 30 },
+    50: { w: 50, h: 50 },
+    100:{ w:100, h:100 },
+    150:{ w:150, h:150 }
+  },
+  "3:4": {
+    30: { w: 24, h: 30 },
+    50: { w: 38, h: 50 },
+    100:{ w: 76, h:100 },
+    150:{ w:114, h:150 }
+  },
+  "9:16": {
+    30: { w: 18, h: 30 },
+    50: { w: 28, h: 50 },
+    100:{ w: 56, h:100 },
+    150:{ w: 84, h:150 }
+  }
+}
+
 // =====================
 // パレット定義（省略なし）
 // =====================
@@ -212,26 +287,50 @@ const palettes = [
 // =====================
 // 共通要素
 // =====================
+let editMode = false          // 編集モードON/OFF
+let maskIsBlack = false      // false=白, true=黒
+let selectedColor = null     // 選択中の色（hex）
 let sourceImage = null
 const canvas = document.getElementById("canvas")
 const ctx = canvas.getContext("2d")
 const info = document.getElementById("info")
 const zoom = document.getElementById("zoom")
+const aspect = document.getElementById("ratio")
+const resolution = document.getElementById("resolution")
 
 let grid = []
 let paletteCells = []
 
-
 // =====================
-// 比率＋精度計算
+// 太線グリッド規則（③）
 // =====================
-function getCanvasSize() {
-  const [rw, rh] = document.getElementById("ratio").value.split(":").map(Number)
-  const base = Number(document.getElementById("resolution").value)
-  const w = Math.round(base * rw / Math.max(rw, rh))
-  const h = Math.round(base * rh / Math.max(rw, rh))
-  return { w, h }
+const majorGridRule = {
+  "16:9": {
+    axis: "y",
+    start: { 30:3, 50:3, 100:1, 150:4 }
+  },
+  "4:3": {
+    axis: "y",
+    start: { 30:4, 50:3, 100:1, 150:4 }
+  },
+  "1:1": {
+    axis: "both",
+    start: 5
+  },
+  "3:4": {
+    axis: "x",
+    start: { 30:4, 50:3, 100:1, 150:4 }
+  },
+  "9:16": {
+    axis: "x",
+    start: { 30:3, 50:3, 100:1, 150:4 }
+  }
 }
+
+function getGridSize() {
+  return gridSizeTable[aspect.value][resolution.value]
+}
+
 
 // =====================
 // 色距離（最近傍色）
@@ -297,41 +396,12 @@ buildPaletteUI()
 // =====================
 document.getElementById("imageInput").onchange = e => {
   const img = new Image()
-  img.onload = () => {
-  sourceImage = img      // ← 元画像を保存
-   renderFromSource()     // ← 描画は別関数に任せる
-    const { w, h } = getCanvasSize()
-    canvas.width = w
-    canvas.height = h
-
-    canvas.style.width = w * zoom.value + "px"
-    canvas.style.height = h * zoom.value + "px"
-    
-    wrap.style.width = canvas.style.width
-    wrap.style.height = canvas.style.height
-
-    const temp = document.createElement("canvas")
-    temp.width = w
-    temp.height = h
-    const tctx = temp.getContext("2d")
-    tctx.drawImage(img, 0, 0, w, h)
-
-    const data = tctx.getImageData(0,0,w,h).data
-    grid = []
-
-    for (let y=0; y<h; y++) {
-      grid[y] = []
-      for (let x=0; x<w; x++) {
-        const i = (y*w+x)*4
-        const hex = `#${[data[i],data[i+1],data[i+2]]
-          .map(v=>v.toString(16).padStart(2,"0")).join("")}`
-        const p = findNearestPalette(hex)
-        grid[y][x] = p
-        ctx.fillStyle = p.color
-        ctx.fillRect(x,y,1,1)
-      }
-    }
+ img.onload = () => {
+  sourceImage = img      // 元画像を保存
+  renderFromSource()     // サイズ決定・描画・grid生成は全部ここ
+    updateMajorGridOffset()
   }
+  
   img.src = URL.createObjectURL(e.target.files[0])
 }
 
@@ -339,6 +409,8 @@ document.getElementById("imageInput").onchange = e => {
 // ズーム
 // =====================
 zoom.oninput = () => {
+  if (!grid.length) return   // ← これが超重要（画像未読込対策）
+
   const size = zoom.value + "px"
 
   canvas.style.width = canvas.width * zoom.value + "px"
@@ -348,6 +420,8 @@ zoom.oninput = () => {
   wrap.style.height = canvas.style.height
 
   wrap.style.setProperty("--cell", size)
+  
+  updateMajorGridOffset() 
 }
 
 // =====================
@@ -360,6 +434,8 @@ if (!grid.length) return
   const y = Math.floor((e.clientY-r.top)/(r.height/canvas.height))
   if (!grid[y] || !grid[y][x]) return  // ← ここでチェック！
   const c = grid[y][x]
+  selectedColor = c.color
+if (editMode) renderFromSource()
 
 const box = document.getElementById("selectBox")
   const cellSize = zoom.value
@@ -393,7 +469,7 @@ ${c.ci+1} 列目 の 上から ${c.ri+1} 番`
   clearTimeout(tooltip._timer)
   tooltip._timer = setTimeout(() => {
     tooltip.classList.remove("show")
-  }, 1500)
+  }, 5000)
 }
 
 const wrap = document.getElementById("canvasWrap")
@@ -416,6 +492,20 @@ const tooltip = document.getElementById("tooltip")
 
 const gridToggle = document.getElementById("gridToggle")
 let gridOn = true
+const editToggle = document.getElementById("editToggle")
+const maskColorToggle = document.getElementById("maskColorToggle")
+
+editToggle.onclick = () => {
+  editMode = !editMode
+  editToggle.textContent = editMode ? "ON" : "OFF"
+  renderFromSource()
+}
+
+maskColorToggle.onclick = () => {
+  maskIsBlack = !maskIsBlack
+  maskColorToggle.textContent = maskIsBlack ? "黒" : "白"
+  if (editMode) renderFromSource()
+}
 
 gridToggle.onclick = () => {
   gridOn = !gridOn
@@ -432,7 +522,7 @@ gridToggle.onclick = () => {
 function renderFromSource() {
   if (!sourceImage) return
 
-  const { w, h } = getCanvasSize()
+  const { w, h } = getGridSize()
 
   canvas.width = w
   canvas.height = h
@@ -461,14 +551,37 @@ function renderFromSource() {
 
       const p = findNearestPalette(hex)
       grid[y][x] = p
-      ctx.fillStyle = p.color
-      ctx.fillRect(x, y, 1, 1)
+    let drawColor = p.color
+
+if (editMode && selectedColor) {
+  if (p.color !== selectedColor) {
+    drawColor = maskIsBlack ? "#000000" : "#ffffff"
+  }
+}
+
+ctx.fillStyle = drawColor
+ctx.fillRect(x, y, 1, 1)
     }
   }
 }
 
-document.getElementById("ratio").onchange = renderFromSource
-document.getElementById("resolution").onchange = renderFromSource
+aspect.onchange = () => {
+  renderFromSource()
+  updateMajorGridOffset()
+}
+
+resolution.onchange = () => {
+  renderFromSource()
+  updateMajorGridOffset()
+}
+
+function updateMajorGridOffset() {
+  wrap.style.setProperty("--major-x-offset", "0px")
+  wrap.style.setProperty("--major-y-offset", "0px")
+}
+
+
+
 </script>
 </body>
 </html>
