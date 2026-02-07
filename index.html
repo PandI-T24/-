@@ -6,8 +6,6 @@
 <style>
 body {
   font-family: sans-serif;
-  display: flex;
-  gap: 20px;
   padding: 20px;
   box-sizing: border-box;
 }
@@ -137,9 +135,28 @@ canvas {
   pointer-events: none;
   display: none;
 }
+
+.ad-area {
+  margin-top: 16px;
+  padding: 8px;
+  min-height: 90px;
+  text-align: center;
+}
+
 </style>
 </head>
 <body>
+
+<div class="tool-desc">
+  <h2>ハートピア専用ドット絵変換ツール</h2>
+  <p>
+    このツールは、画像をドット絵（ピクセルアート）に変換し、
+    比率や精度を指定してグリッドの絵を書き写す為のツールです。
+  </p>
+  <p class="en">
+    This tool converts images into pixel art and allows you to trace grid images by specifying the ratio and accuracy.
+  </p>
+</div>
 
 <div>
   <div class="controls">
@@ -195,6 +212,19 @@ canvas {
 <div class="right">
   <div class="info" id="info">ドットをタップしてください</div>
   <div class="palette" id="palette"></div>
+</div>
+
+<div class="ad-area">
+  <!-- 広告がここに入る -->
+</div>
+
+<div class="ad-row">
+  <div class="ad-box">
+    <!-- 広告① -->
+  </div>
+  <div class="ad-box">
+    <!-- 広告② -->
+  </div>
 </div>
 
 <script>
@@ -302,7 +332,7 @@ const info = document.getElementById("info")
 const zoom = document.getElementById("zoom")
 const aspect = document.getElementById("ratio")
 const resolution = document.getElementById("resolution")
-
+const downloadBtn = document.getElementById("downloadBtn")
 let grid = []
 let paletteCells = []
 
@@ -514,7 +544,6 @@ maskColorToggle.onclick = () => {
 
 gridToggle.onclick = () => {
   gridOn = !gridOn
-  wrap.style.opacity = gridOn ? "1" : "1"   // wrap自体は消さない
   wrap.style.setProperty(
     "--grid-color",
     gridOn
