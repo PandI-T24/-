@@ -60,22 +60,20 @@ canvas {
   --cell: 12px;
   --grid-black: rgba(0,0,0,0.3);
   --grid-white: rgba(255,255,255,0.4);
-  --grid-color: var(--grid-black); /* 初期は黒 */
+  --grid-color: var(--grid-black);
   
   --major-x-offset: 0px;
   --major-y-offset: 0px;
-  --major-width: 2px; /* ← 太線の太さ */
+  --major-width: 2px;
 }
 
 .grid.thin {
   position: absolute;
   inset: 0;
   pointer-events: none;
-
   background-image:
     linear-gradient(to right, var(--grid-color) 1px, transparent 1px),
     linear-gradient(to bottom, var(--grid-color) 1px, transparent 1px);
-
   background-size: var(--cell) var(--cell);
 }
 
@@ -83,7 +81,6 @@ canvas {
   position: absolute;
   inset: 0;
   pointer-events: none;
-
   background-image:
     linear-gradient(
       to right,
@@ -101,13 +98,11 @@ canvas {
       var(--grid-color) calc(var(--cell) * 5 + var(--major-width) / 2),
       transparent calc(var(--cell) * 5 + var(--major-width) / 2)
     );
-
   background-size:
     calc(var(--cell) * 5) calc(100% + 1px),
     calc(100% + 1px) calc(var(--cell) * 5);
-    
   background-position: 0 bottom;
-   outline: var(--major-width) solid var(--grid-color);
+  outline: var(--major-width) solid var(--grid-color);
   outline-offset: calc(var(--major-width) * -1);
 }
 
@@ -131,12 +126,17 @@ canvas {
   transform: translateY(0);
 }
 
-#selectBox {
+/* 複数選択用のコンテナ */
+#selectionLayer {
   position: absolute;
-  border: 2px solid red;
-  box-sizing: border-box;
+  inset: 0;
   pointer-events: none;
-  display: none;
+}
+
+.select-rect {
+  position: absolute;
+  border: 1px solid red; /* たくさん並ぶので少し細めにしています */
+  box-sizing: border-box;
 }
 
 .ad-area {
@@ -158,20 +158,13 @@ canvas {
   width: 300px;
   min-height: 100px;
 }
-
 </style>
 </head>
 <body>
 
 <div class="tool-desc">
   <h2>ハートピア専用ドット絵変換ツール</h2>
-  <p>
-    このツールは、画像をドット絵（ピクセルアート）に変換し、
-    比率や精度を指定してグリッドの絵を書き写す為のツールです。
-  </p>
-  <p class="en">
-    This tool converts images into pixel art and allows you to trace grid images by specifying the ratio and accuracy.
-  </p>
+  <p>画像から同じ色のマスを一括抽出できるようになりました。</p>
 </div>
 
 <div>
@@ -199,7 +192,6 @@ canvas {
     <br><br>
     ズーム：
     <input type="range" id="zoom" min="4" max="25" value="12">
-    
   </div>
 
 <br><br>
@@ -212,7 +204,7 @@ canvas {
   <canvas id="canvas"></canvas>
   <div class="grid thin"></div>
   <div class="grid major"></div>
-  <div id="selectBox"></div>
+  <div id="selectionLayer"></div>
   <div id="tooltip"></div>
 </div>
 
@@ -220,457 +212,272 @@ canvas {
 <button id="downloadBtn">ダウンロード</button>
 
 <br><br>
-編集モード：
+強調表示：
 <button id="editToggle">OFF</button>
-<button id="maskColorToggle">白</button>
-
 
 <div class="right">
   <div class="info" id="info">ドットをタップしてください</div>
   <div class="palette" id="palette"></div>
 </div>
 
-<div class="ad-area">
-  <!-- 広告がここに入る -->
-</div>
+<div class="ad-area"></div>
 
 <div class="ad-row">
-
   <div class="ad-box">
-    <!-- 広告① -->
-    <ins class="adsbygoogle"
-         style="display:block"
-         data-ad-client="ca-pub-7429448267352051"
-         data-ad-slot="3135599373"
-         data-ad-format="auto"
-         data-full-width-responsive="true"></ins>
-    <script>
-      (adsbygoogle = window.adsbygoogle || []).push({});
-    </script>
+    <ins class="adsbygoogle" style="display:block" data-ad-client="ca-pub-7429448267352051" data-ad-slot="3135599373" data-ad-format="auto" data-full-width-responsive="true"></ins>
+    <script>(adsbygoogle = window.adsbygoogle || []).push({});</script>
   </div>
-
   <div class="ad-box">
-    <!-- 広告② -->
-    <ins class="adsbygoogle"
-         style="display:block"
-         data-ad-client="ca-pub-7429448267352051"
-         data-ad-slot="9317864348"
-         data-ad-format="auto"
-         data-full-width-responsive="true"></ins>
-    <script>
-      (adsbygoogle = window.adsbygoogle || []).push({});
-    </script>
+    <ins class="adsbygoogle" style="display:block" data-ad-client="ca-pub-7429448267352051" data-ad-slot="9317864348" data-ad-format="auto" data-full-width-responsive="true"></ins>
+    <script>(adsbygoogle = window.adsbygoogle || []).push({});</script>
   </div>
-
 </div>
 
 <script>
 const gridSizeTable = {
-  "16:9": {
-    30: { w: 30, h: 18 },
-    50: { w: 50, h: 28 },
-    100:{ w:100, h: 56 },
-    150:{ w:150, h: 84 }
-  },
-  "4:3": {
-    30: { w: 30, h: 24 },
-    50: { w: 50, h: 38 },
-    100:{ w:100, h: 76 },
-    150:{ w:150, h:114 }
-  },
-  "1:1": {
-    30: { w: 30, h: 30 },
-    50: { w: 50, h: 50 },
-    100:{ w:100, h:100 },
-    150:{ w:150, h:150 }
-  },
-  "3:4": {
-    30: { w: 24, h: 30 },
-    50: { w: 38, h: 50 },
-    100:{ w: 76, h:100 },
-    150:{ w:114, h:150 }
-  },
-  "9:16": {
-    30: { w: 18, h: 30 },
-    50: { w: 28, h: 50 },
-    100:{ w: 56, h:100 },
-    150:{ w: 84, h:150 }
-  }
+  "16:9": { 30: { w: 30, h: 18 }, 50: { w: 50, h: 28 }, 100:{ w:100, h: 56 }, 150:{ w:150, h: 84 } },
+  "4:3": { 30: { w: 30, h: 24 }, 50: { w: 50, h: 38 }, 100:{ w:100, h: 76 }, 150:{ w:150, h:114 } },
+  "1:1": { 30: { w: 30, h: 30 }, 50: { w: 50, h: 50 }, 100:{ w:100, h:100 }, 150:{ w:150, h:150 } },
+  "3:4": { 30: { w: 24, h: 30 }, 50: { w: 38, h: 50 }, 100:{ w: 76, h:100 }, 150:{ w:114, h:150 } },
+  "9:16": { 30: { w: 18, h: 30 }, 50: { w: 28, h: 50 }, 100:{ w: 56, h:100 }, 150:{ w: 84, h:150 } }
 }
 
-// =====================
-// パレット定義（省略なし）
-// =====================
 const palettes = [
-{ name:"黒系（3色×2）", columns:[
-    ["#061616","#808182","#fefffe"],
-    ["#434446","#bec0bf","#fefbf4"]
-  ]},
-  { name:"赤系", columns:[
-    ["#d2374f","#a7273e","#cb8384","#69313b","#c0acab"],
-    ["#ef6e72","#f5aca6","#a25e5f","#e7d6d6","#745f5e"]
-  ]},
-  { name:"オレンジ系", columns:[
-    ["#e95e2c","#aa4225","#da947d","#753b32","#bfaca6"],
-    ["#fa8359","#feba9f","#ae6b58","#e9d6d0","#755d59"]
-  ]},
-  { name:"山吹系", columns:[
-    ["#f39d12","#b16d18","#dba76d","#7a5026","#cebca8"],
-    ["#feae3b","#ffcf91","#b3814c","#f5e3cf","#806f5f"]
-  ]},
-  { name:"黄色系", columns:[
-    ["#eeca15","#b39417","#d3be6d","#756227","#c6bfa3"],
-    ["#f9d737","#fce891","#ab964a","#efe6c6","#78725a"]
-  ]},
-  { name:"黄緑系", columns:[
-    ["#a7bc15","#758616","#adb76e","#555f2b","#bbc0a2"],
-    ["#b6c930","#d8de92","#848f48","#e5eac6","#6f745e"]
-  ]},
-  { name:"緑系", columns:[
-    ["#06a15d","#047245","#78b28c","#235740","#9eb6a6"],
-    ["#41b97c","#9cd9ad","#508969","#c4dfcc","#53695d"]
-  ]},
-  { name:"エメラルド系", columns:[
-    ["#058681","#056865","#57a49e","#054b4b","#98b7b2"],
-    ["#05ab9f","#7cccbf","#2c7d77","#bfdfda","#4d6a66"]
-  ]},
-  { name:"水色系", columns:[
-    ["#06719d","#055877","#5192a4","#064959","#9db4ba"],
-    ["#059aba","#78baca","#246d7e","#c6dde2","#50676f"]
-  ]},
-  { name:"青系", columns:[
-    ["#065ea6","#054781","#5d80a0","#193b57","#9ca6b0"],
-    ["#2d83c0","#84a8c8","#385c80","#c0cdd6","#4b5a67"]
-  ]},
-  { name:"青紫系", columns:[
-    ["#524da1","#3e397d","#787aa1","#313453","#a0a2af"],
-    ["#7578bd","#a2a0c8","#55577e","#c9cbd7","#575969"]
-  ]},
-  { name:"赤紫系", columns:[
-    ["#813c8c","#622a6c","#907296","#432f4b","#aba1ac"],
-    ["#9f67ab","#b89bb9","#6b4d73","#d0c8d3","#615664"]
-  ]},
-  { name:"桃系", columns:[
-    ["#ac356d","#872757","#b37a8b","#60344b","#bdadb0"],
-    ["#d06a8f","#daa1b4","#8c5268","#e2d6da","#725e67"]
-  ]}
+  { name:"黒系", columns:[["#061616","#808182","#fefffe"],["#434446","#bec0bf","#fefbf4"]]},
+  { name:"赤系", columns:[["#d2374f","#a7273e","#cb8384","#69313b","#c0acab"],["#ef6e72","#f5aca6","#a25e5f","#e7d6d6","#745f5e"]]},
+  { name:"オレンジ系", columns:[["#e95e2c","#aa4225","#da947d","#753b32","#bfaca6"],["#fa8359","#feba9f","#ae6b58","#e9d6d0","#755d59"]]},
+  { name:"山吹系", columns:[["#f39d12","#b16d18","#dba76d","#7a5026","#cebca8"],["#feae3b","#ffcf91","#b3814c","#f5e3cf","#806f5f"]]},
+  { name:"黄色系", columns:[["#eeca15","#b39417","#d3be6d","#756227","#c6bfa3"],["#f9d737","#fce891","#ab964a","#efe6c6","#78725a"]]},
+  { name:"黄緑系", columns:[["#a7bc15","#758616","#adb76e","#555f2b","#bbc0a2"],["#b6c930","#d8de92","#848f48","#e5eac6","#6f745e"]]},
+  { name:"緑系", columns:[["#06a15d","#047245","#78b28c","#235740","#9eb6a6"],["#41b97c","#9cd9ad","#508969","#c4dfcc","#53695d"]]},
+  { name:"エメラルド系", columns:[["#058681","#056865","#57a49e","#054b4b","#98b7b2"],["#05ab9f","#7cccbf","#2c7d77","#bfdfda","#4d6a66"]]},
+  { name:"水色系", columns:[["#06719d","#055877","#5192a4","#064959","#9db4ba"],["#059aba","#78baca","#246d7e","#c6dde2","#50676f"]]},
+  { name:"青系", columns:[["#065ea6","#054781","#5d80a0","#193b57","#9ca6b0"],["#2d83c0","#84a8c8","#385c80","#c0cdd6","#4b5a67"]]},
+  { name:"青紫系", columns:[["#524da1","#3e397d","#787aa1","#313453","#a0a2af"],["#7578bd","#a2a0c8","#55577e","#c9cbd7","#575969"]]},
+  { name:"赤紫系", columns:[["#813c8c","#622a6c","#907296","#432f4b","#aba1ac"],["#9f67ab","#b89bb9","#6b4d73","#d0c8d3","#615664"]]},
+  { name:"桃系", columns:[["#ac356d","#872757","#b37a8b","#60344b","#bdadb0"],["#d06a8f","#daa1b4","#8c5268","#e2d6da","#725e67"]]}
 ]
 
-// =====================
-// 共通要素
-// =====================
-let editMode = false          // 編集モードON/OFF
-let maskIsBlack = false      // false=白, true=黒
-let selectedColor = null     // 選択中の色（hex）
-let sourceImage = null
-const canvas = document.getElementById("canvas")
-const ctx = canvas.getContext("2d")
-const info = document.getElementById("info")
-const zoom = document.getElementById("zoom")
-const aspect = document.getElementById("ratio")
-const resolution = document.getElementById("resolution")
-const downloadBtn = document.getElementById("downloadBtn")
-let grid = []
-let paletteCells = []
-
-// =====================
-// 太線グリッド規則（③）
-// =====================
-const majorGridRule = {
-  "16:9": {
-    axis: "y",
-    start: { 30:3, 50:3, 100:1, 150:4 }
-  },
-  "4:3": {
-    axis: "y",
-    start: { 30:4, 50:3, 100:1, 150:4 }
-  },
-  "1:1": {
-    axis: "both",
-    start: 5
-  },
-  "3:4": {
-    axis: "x",
-    start: { 30:4, 50:3, 100:1, 150:4 }
-  },
-  "9:16": {
-    axis: "x",
-    start: { 30:3, 50:3, 100:1, 150:4 }
-  }
-}
+let editMode = false;
+let selectedColor = null;
+let sourceImage = null;
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+const info = document.getElementById("info");
+const zoom = document.getElementById("zoom");
+const aspect = document.getElementById("ratio");
+const resolution = document.getElementById("resolution");
+const downloadBtn = document.getElementById("downloadBtn");
+const selectionLayer = document.getElementById("selectionLayer");
+let grid = [];
+let paletteCells = [];
 
 function getGridSize() {
-  return gridSizeTable[aspect.value][resolution.value]
+  return gridSizeTable[aspect.value][resolution.value];
 }
 
-
-// =====================
-// 色距離（最近傍色）
-// =====================
 function colorDist(c1, c2) {
-  const a = parseInt(c1.slice(1), 16)
-  const b = parseInt(c2.slice(1), 16)
-  const r = ((a>>16)&255) - ((b>>16)&255)
-  const g = ((a>>8)&255) - ((b>>8)&255)
-  const bl = (a&255) - (b&255)
-  return r*r + g*g + bl*bl
+  const a = parseInt(c1.slice(1), 16);
+  const b = parseInt(c2.slice(1), 16);
+  const r = ((a>>16)&255) - ((b>>16)&255);
+  const g = ((a>>8)&255) - ((b>>8)&255);
+  const bl = (a&255) - (b&255);
+  return r*r + g*g + bl*bl;
 }
 
 function findNearestPalette(hex) {
-  let best
+  let best;
   palettes.forEach((p, pi) =>
     p.columns.forEach((col, ci) =>
       col.forEach((c, ri) => {
-        const d = colorDist(hex, c)
-        if (!best || d < best.d) best = {pi,ci,ri,color:c,d}
+        const d = colorDist(hex, c);
+        if (!best || d < best.d) best = {pi,ci,ri,color:c,d};
       })
     )
-  )
-  return best
+  );
+  return best;
 }
 
-// =====================
-// パレットUI生成
-// =====================
 function buildPaletteUI() {
-  const pDiv = document.getElementById("palette")
-  pDiv.innerHTML = ""
-  paletteCells = []
-
-palettes.forEach((p, pi) => {
-  const g = document.createElement("div")
-  g.className = "palette-group"
-
-  const rows = p.columns[0].length
-
-  for (let ri = 0; ri < rows; ri++) {
-    p.columns.forEach((col, ci) => {
-      const c = col[ri]
-
-      const cell = document.createElement("div")
-      cell.className = "color-cell"
-      cell.style.background = c
-      cell.dataset.pi = pi
-      cell.dataset.ci = ci
-      cell.dataset.ri = ri
-      g.appendChild(cell)
-      paletteCells.push(cell)
-    })
-  }
-
-  pDiv.appendChild(g)
-})
+  const pDiv = document.getElementById("palette");
+  pDiv.innerHTML = "";
+  paletteCells = [];
+  palettes.forEach((p, pi) => {
+    const g = document.createElement("div");
+    g.className = "palette-group";
+    const rows = p.columns[0].length;
+    for (let ri = 0; ri < rows; ri++) {
+      p.columns.forEach((col, ci) => {
+        const c = col[ri];
+        const cell = document.createElement("div");
+        cell.className = "color-cell";
+        cell.style.background = c;
+        cell.dataset.pi = pi; cell.dataset.ci = ci; cell.dataset.ri = ri;
+        g.appendChild(cell);
+        paletteCells.push(cell);
+      });
+    }
+    pDiv.appendChild(g);
+  });
 }
-buildPaletteUI()
+buildPaletteUI();
 
-// =====================
-// 画像 → ドット化
-// =====================
-document.getElementById("imageInput").onchange = e => {
-  const img = new Image()
- img.onload = () => {
-  sourceImage = img      // 元画像を保存
-  renderFromSource()     // サイズ決定・描画・grid生成は全部ここ
-    updateMajorGridOffset()
-  }
+// 選択枠を一括更新する関数
+function updateSelection() {
+  selectionLayer.innerHTML = "";
+  if (!selectedColor || !grid.length) return;
+
+  const cellSize = parseFloat(zoom.value);
   
-  img.src = URL.createObjectURL(e.target.files[0])
-}
+  for (let y = 0; y < grid.length; y++) {
+    for (let x = 0; x < grid[y].length; x++) {
+      const cell = grid[y][x];
+      // 編集モードONなら「同じ色の全マス」、OFFなら「タップした1マス」だけを出す（元ツールの挙動）
+      // もしOFF時も全部出したいなら editMode の条件を外してください
+      if (cell.color === selectedColor) {
+        if (!editMode && (x !== lastX || y !== lastY)) continue; 
 
-// =====================
-// ズーム
-// =====================
-zoom.oninput = () => {
-  if (!grid.length) return   // ← これが超重要（画像未読込対策）
-
-  const size = zoom.value + "px"
-
-  canvas.style.width = canvas.width * zoom.value + "px"
-  canvas.style.height = canvas.height * zoom.value + "px"
-
-  wrap.style.width = canvas.style.width
-  wrap.style.height = canvas.style.height
-
-  wrap.style.setProperty("--cell", size)
-  
-  updateMajorGridOffset() 
-}
-
-// =====================
-// タップ表示
-// =====================
-canvas.onclick = e => {
-if (!grid.length) return
-  const r = canvas.getBoundingClientRect()
-  const x = Math.floor((e.clientX-r.left)/(r.width/canvas.width))
-  const y = Math.floor((e.clientY-r.top)/(r.height/canvas.height))
-  if (!grid[y] || !grid[y][x]) return  // ← ここでチェック！
-  const c = grid[y][x]
-  selectedColor = c.color
-if (editMode) renderFromSource()
-
-const box = document.getElementById("selectBox")
-  const cellSize = zoom.value
-  box.style.left = (x * cellSize) + "px"
-  box.style.top  = (y * cellSize) + "px"
-  box.style.width  = cellSize + "px"
-  box.style.height = cellSize + "px"
-  box.style.display = "block"
-  
-  info.innerText =
-`このマスの色：
-左から ${c.pi+1} 番パレット
-${c.ci+1} 列目 の 上から ${c.ri+1} 番`
-
-
-  paletteCells.forEach(p=>p.classList.remove("highlight"))
-  paletteCells.find(p =>
-    p.dataset.pi==c.pi &&
-    p.dataset.ci==c.ci &&
-    p.dataset.ri==c.ri
-  )?.classList.add("highlight")
-
-  // --- ここから tooltip ---
-  tooltip.innerText =
-`P${c.pi+1} / 列${c.ci+1} / 行${c.ri+1}`
-
-  tooltip.style.left = e.clientX - r.left + 12 + "px"
-  tooltip.style.top  = e.clientY - r.top  + 12 + "px"
-  tooltip.classList.add("show")
-
-  clearTimeout(tooltip._timer)
-  tooltip._timer = setTimeout(() => {
-    tooltip.classList.remove("show")
-  }, 5000)
-}
-
-const wrap = document.getElementById("canvasWrap")
-
-const gridBtn = document.getElementById("gridColorToggle")
-let isWhiteGrid = false
-
-gridBtn.onclick = () => {
-  isWhiteGrid = !isWhiteGrid
-  wrap.style.setProperty(
-    "--grid-color",
-    isWhiteGrid
-      ? "rgba(255,255,255,0.4)"
-      : "rgba(0,0,0,0.3)"
-  )
-  gridBtn.textContent = isWhiteGrid ? "白" : "黒"
-}
-
-const tooltip = document.getElementById("tooltip")
-
-const gridToggle = document.getElementById("gridToggle")
-let gridOn = true
-const editToggle = document.getElementById("editToggle")
-const maskColorToggle = document.getElementById("maskColorToggle")
-
-editToggle.onclick = () => {
-  editMode = !editMode
-  editToggle.textContent = editMode ? "ON" : "OFF"
-  renderFromSource()
-}
-
-maskColorToggle.onclick = () => {
-  maskIsBlack = !maskIsBlack
-  maskColorToggle.textContent = maskIsBlack ? "黒" : "白"
-  if (editMode) renderFromSource()
-}
-
-gridToggle.onclick = () => {
-  gridOn = !gridOn
-  wrap.style.setProperty(
-    "--grid-color",
-    gridOn
-      ? (isWhiteGrid ? "rgba(255,255,255,0.4)" : "rgba(0,0,0,0.3)")
-      : "rgba(0,0,0,0)"
-  )
-  gridToggle.textContent = gridOn ? "ON" : "OFF"
-}
-
-function renderFromSource() {
-  if (!sourceImage) return
-
-  const { w, h } = getGridSize()
-
-  canvas.width = w
-  canvas.height = h
-
-  canvas.style.width = w * zoom.value + "px"
-  canvas.style.height = h * zoom.value + "px"
-
-  wrap.style.width = canvas.style.width
-  wrap.style.height = canvas.style.height
-
-  const temp = document.createElement("canvas")
-  temp.width = w
-  temp.height = h
-  const tctx = temp.getContext("2d")
-  tctx.drawImage(sourceImage, 0, 0, w, h)
-
-  const data = tctx.getImageData(0,0,w,h).data
-  grid = []
-
-  for (let y = 0; y < h; y++) {
-    grid[y] = []
-    for (let x = 0; x < w; x++) {
-      const i = (y * w + x) * 4
-      const hex = `#${[data[i], data[i+1], data[i+2]]
-        .map(v => v.toString(16).padStart(2,"0")).join("")}`
-
-      const p = findNearestPalette(hex)
-      grid[y][x] = p
-    let drawColor = p.color
-
-if (editMode && selectedColor) {
-  if (p.color !== selectedColor) {
-    drawColor = maskIsBlack ? "#000000" : "#ffffff"
-  }
-}
-
-ctx.fillStyle = drawColor
-ctx.fillRect(x, y, 1, 1)
+        const rect = document.createElement("div");
+        rect.className = "select-rect";
+        rect.style.left = (x * cellSize) + "px";
+        rect.style.top = (y * cellSize) + "px";
+        rect.style.width = cellSize + "px";
+        rect.style.height = cellSize + "px";
+        selectionLayer.appendChild(rect);
+      }
     }
   }
 }
 
-aspect.onchange = () => {
-  renderFromSource()
-  updateMajorGridOffset()
+let lastX = -1, lastY = -1; // 最後にタップした座標
+
+canvas.onclick = e => {
+  if (!grid.length) return;
+  const r = canvas.getBoundingClientRect();
+  const x = Math.floor((e.clientX-r.left)/(r.width/canvas.width));
+  const y = Math.floor((e.clientY-r.top)/(r.height/canvas.height));
+  if (!grid[y] || !grid[y][x]) return;
+
+  const c = grid[y][x];
+  selectedColor = c.color;
+  lastX = x;
+  lastY = y;
+
+  updateSelection();
+
+  info.innerText = `このマスの色：\n左から ${c.pi+1} 番パレット\n${c.ci+1} 列目 の 上から ${c.ri+1} 番`;
+
+  paletteCells.forEach(p=>p.classList.remove("highlight"));
+  paletteCells.find(p => p.dataset.pi==c.pi && p.dataset.ci==c.ci && p.dataset.ri==c.ri)?.classList.add("highlight");
+
+  tooltip.innerText = `P${c.pi+1} / 列${c.ci+1} / 行${c.ri+1}`;
+  tooltip.style.left = e.clientX - r.left + 12 + "px";
+  tooltip.style.top  = e.clientY - r.top  + 12 + "px";
+  tooltip.classList.add("show");
+  clearTimeout(tooltip._timer);
+  tooltip._timer = setTimeout(() => tooltip.classList.remove("show"), 5000);
 }
 
-resolution.onchange = () => {
-  renderFromSource()
-  updateMajorGridOffset()
+document.getElementById("imageInput").onchange = e => {
+  const img = new Image();
+  img.onload = () => {
+    sourceImage = img;
+    renderFromSource();
+    updateMajorGridOffset();
+  }
+  img.src = URL.createObjectURL(e.target.files[0]);
 }
+
+zoom.oninput = () => {
+  if (!grid.length) return;
+  const size = zoom.value + "px";
+  canvas.style.width = canvas.width * zoom.value + "px";
+  canvas.style.height = canvas.height * zoom.value + "px";
+  wrap.style.width = canvas.style.width;
+  wrap.style.height = canvas.style.height;
+  wrap.style.setProperty("--cell", size);
+  updateMajorGridOffset();
+  updateSelection(); // ズーム時も枠を再描画
+}
+
+const wrap = document.getElementById("canvasWrap");
+const gridBtn = document.getElementById("gridColorToggle");
+let isWhiteGrid = false;
+
+gridBtn.onclick = () => {
+  isWhiteGrid = !isWhiteGrid;
+  wrap.style.setProperty("--grid-color", isWhiteGrid ? "rgba(255,255,255,0.4)" : "rgba(0,0,0,0.3)");
+  gridBtn.textContent = isWhiteGrid ? "白" : "黒";
+}
+
+const tooltip = document.getElementById("tooltip");
+const gridToggle = document.getElementById("gridToggle");
+let gridOn = true;
+const editToggle = document.getElementById("editToggle");
+
+editToggle.onclick = () => {
+  editMode = !editMode;
+  editToggle.textContent = editMode ? "ON" : "OFF";
+  updateSelection(); // モード切り替え時に枠の表示を更新
+}
+
+gridToggle.onclick = () => {
+  gridOn = !gridOn;
+  wrap.style.setProperty("--grid-color", gridOn ? (isWhiteGrid ? "rgba(255,255,255,0.4)" : "rgba(0,0,0,0.3)") : "rgba(0,0,0,0)");
+  gridToggle.textContent = gridOn ? "ON" : "OFF";
+}
+
+function renderFromSource() {
+  if (!sourceImage) return;
+  const { w, h } = getGridSize();
+  canvas.width = w; canvas.height = h;
+  canvas.style.width = w * zoom.value + "px";
+  canvas.style.height = h * zoom.value + "px";
+  wrap.style.width = canvas.style.width;
+  wrap.style.height = canvas.style.height;
+
+  const temp = document.createElement("canvas");
+  temp.width = w; temp.height = h;
+  const tctx = temp.getContext("2d");
+  tctx.drawImage(sourceImage, 0, 0, w, h);
+  const data = tctx.getImageData(0,0,w,h).data;
+  grid = [];
+
+  for (let y = 0; y < h; y++) {
+    grid[y] = [];
+    for (let x = 0; x < w; x++) {
+      const i = (y * w + x) * 4;
+      const hex = `#${[data[i], data[i+1], data[i+2]].map(v => v.toString(16).padStart(2,"0")).join("")}`;
+      const p = findNearestPalette(hex);
+      grid[y][x] = p;
+      ctx.fillStyle = p.color;
+      ctx.fillRect(x, y, 1, 1);
+    }
+  }
+}
+
+aspect.onchange = () => { renderFromSource(); updateMajorGridOffset(); updateSelection(); };
+resolution.onchange = () => { renderFromSource(); updateMajorGridOffset(); updateSelection(); };
 
 function updateMajorGridOffset() {
-  wrap.style.setProperty("--major-x-offset", "0px")
-  wrap.style.setProperty("--major-y-offset", "0px")
+  wrap.style.setProperty("--major-x-offset", "0px");
+  wrap.style.setProperty("--major-y-offset", "0px");
 }
 
 downloadBtn.onclick = () => {
-  if (!grid.length) return
-
-  const { w, h } = getGridSize()
-  const name = `${aspect.value.replace(":","x")}_${resolution.value}_${w}x${h}.png`
-
+  if (!grid.length) return;
+  const { w, h } = getGridSize();
+  const name = `${aspect.value.replace(":","x")}_${resolution.value}_${w}x${h}.png`;
   canvas.toBlob(blob => {
-    const url = URL.createObjectURL(blob)
-
-    const a = document.createElement("a")
-    a.href = url
-    a.download = name
-    document.body.appendChild(a)
-    a.click()
-
-    document.body.removeChild(a)
-    URL.revokeObjectURL(url)
-  }, "image/png")
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, "image/png");
 }
-
 </script>
 </body>
 </html>
